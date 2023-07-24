@@ -56,7 +56,7 @@ Sh = np.dot(W, Xh)
 
 # correlation matrix
 # corr_matrix = np.corrcoef(np.vstack((S, Sh)))
-
+plt.figure()  # Create a new figure
 corr_matrix = np.abs(np.corrcoef(np.vstack((S, Sh))))  # take absolute value of correlations
 
 labels = ['s1', 's2', 's3', 'sh1', 'sh2', 'sh3']
@@ -67,7 +67,17 @@ sns.heatmap(corr_matrix, annot=True, fmt=".2f", xticklabels=labels, yticklabels=
 plt.savefig("final_abs_corr_matrix.png")
 # plt.show()
 
+# Correlation matrix between source signals and observed signals
+plt.figure()  # Create a new figure
+corr_matrix_sources_observed = np.abs(np.corrcoef(np.vstack((S, X))))
+
+labels_sources = ['s1', 's2', 's3']
+labels_observed = ['x1', 'x2', 'x3']
+sns.heatmap(corr_matrix_sources_observed, annot=True, fmt=".2f", xticklabels=labels_sources+labels_observed, yticklabels=labels_sources+labels_observed)
+plt.savefig("abs_corr_matrix_sources_observed.png")
+
 # Show original and separated signals
+plt.figure()  # Create a new figure
 time = np.arange(S.shape[1]) / fs
 fig, axs = plt.subplots(3, 2, figsize=(10, 20))
 
@@ -106,4 +116,3 @@ Sh_rescaled = np.int16(Sh/np.max(np.abs(Sh)) * 32767)  # rescale the separated s
 wav.write('./sh1.wav', fs, Sh_rescaled[0])
 wav.write('./sh2.wav', fs, Sh_rescaled[1])
 wav.write('./sh3.wav', fs, Sh_rescaled[2])
-
