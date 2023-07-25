@@ -59,15 +59,20 @@ def reorder_separated_signals(S, Sh):
     correlation_matrix = np.abs(spearmanr(S.T, Sh.T)[0])
     correlation_matrix = correlation_matrix[:S.shape[0], S.shape[0]:]
     separated_order = np.argmax(correlation_matrix, axis=1)
-    return Sh[separated_order]
+    Sh_ordered = Sh[separated_order]
+    # Fix sign ambiguity
+    for i in range(S.shape[0]):
+        if np.corrcoef(S[i], Sh_ordered[i])[0, 1] < 0:  # if correlation is negative
+            Sh_ordered[i] = -Sh_ordered[i]  # flip sign
+    return Sh_ordered
 
 # Calculate Seperated signals from observed-whitened signals
 Sh_initial = ICA(Xh)
 Sh = reorder_separated_signals(S, Sh_initial)
 
 # correlation matrix between source signals and seperated signals
-plt.figure()  # Create a new figure
-corr_matrix = np.abs(np.corrcoef(np.vstack((S, Sh))))  # take absolute value of correlations
+plt.figure()
+corr_matrix = np.corrcoef(np.vstack((S, Sh)))  # take absolute value of correlations
 labels_sources = ['s1', 's2', 's3']
 labels_seperated = ['sh1', 'sh2', 'sh3']
 sns.heatmap(corr_matrix, annot=True, fmt=".2f", xticklabels=labels_sources+labels_seperated, yticklabels=labels_sources+labels_seperated)
@@ -75,15 +80,15 @@ plt.savefig("final_abs_corr_matrix.png",dpi=500)
 # plt.show()
 
 # Correlation matrix between source signals and observed signals
-plt.figure()  # Create a new figure
-corr_matrix_sources_observed = np.abs(np.corrcoef(np.vstack((S, X))))
+plt.figure()
+corr_matrix_sources_observed = np.corrcoef(np.vstack((S, X)))
 labels_observed = ['x1', 'x2', 'x3']
 sns.heatmap(corr_matrix_sources_observed, annot=True, fmt=".2f", xticklabels=labels_sources+labels_observed, yticklabels=labels_sources+labels_observed)
 plt.savefig("abs_corr_matrix_sources_observed.png",dpi=500)
 # plt.show()
 
 # Show original and separated signals spectrum
-plt.figure()  # Create a new figure
+plt.figure()
 time = np.arange(S.shape[1]) / fs
 fig, axs = plt.subplots(2, 3, figsize=(20, 10))
 
@@ -101,18 +106,14 @@ plt.savefig("final_order_diagram.png",dpi=500)
 
 # calculate evaluation metrics
 def calculate_evaluation_metrics(orig, est):
-    # mean squared error
     mse = mean_squared_error(orig, est)
-    # mutual information
-    mi = mutual_info_score(orig.astype(int), est.astype(int))
-    #other metrics
     sdr, sir, sar, _ = bss_eval_sources(orig, est)
-    return mse, mi, sdr, sir, sar
+    return mse, sdr, sir, sar
 
 # Compute the metrics for the corresponding pairs of source and separated signals
 for i in range(3):
-    mse, mi, sdr, sir, sar = calculate_evaluation_metrics(S[i], Sh[i])
-    print(f'For source signal s{i+1} and separated signal sh{i+1}, MSE: {mse:.2f}, MI: {mi:.2f}, SDR: {sdr[0]:.2f}, SIR: {sir[0]:.2f}, SAR: {sar[0]:.2f}')
+    mse, sdr, sir, sar = calculate_evaluation_metrics(S[i], Sh[i])
+    print(f'For source signal s{i+1} and separated signal sh{i+1}, MSE: {mse:.2f}, SDR: {sdr[0]:.2f}, SIR: {sir[0]:.2f}, SAR: {sar[0]:.2f}')
 
 # Save the separated signals to wav files
 Sh_rescaled = np.int16(Sh/np.max(np.abs(Sh)) * 32767)  # rescale the separated signals
