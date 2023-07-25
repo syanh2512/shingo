@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mutual_info_score
 import seaborn as sns
+from mir_eval.separation import bss_eval_sources
 
 # load the observed signals
 fs, x1 = wav.read('./report2_wav/x1.wav')
@@ -32,7 +33,7 @@ V = np.dot(np.sqrt(np.linalg.inv(Lambda)), Q.T)
 Xh = np.dot(V, X)  # whitened signals
 
 # Implement ICA
-def ICA(Xh, max_iter=1000, tol=1e-4):
+def ICA(Xh, max_iter=1000, tol=1e-6):
     m = Xh.shape[0]  # number of sources
     W = np.eye(m)  # initialize unmixing matrix
     for _ in range(max_iter):
@@ -64,7 +65,7 @@ sns.heatmap(corr_matrix, annot=True, fmt=".2f", xticklabels=labels, yticklabels=
 
 # sns.heatmap(corr_matrix, annot=True, fmt=".2f")
 
-plt.savefig("final_abs_corr_matrix.png")
+plt.savefig("final_abs_corr_matrix.png",dpi=500)
 # plt.show()
 
 # Correlation matrix between source signals and observed signals
@@ -74,7 +75,7 @@ corr_matrix_sources_observed = np.abs(np.corrcoef(np.vstack((S, X))))
 labels_sources = ['s1', 's2', 's3']
 labels_observed = ['x1', 'x2', 'x3']
 sns.heatmap(corr_matrix_sources_observed, annot=True, fmt=".2f", xticklabels=labels_sources+labels_observed, yticklabels=labels_sources+labels_observed)
-plt.savefig("abs_corr_matrix_sources_observed.png")
+plt.savefig("abs_corr_matrix_sources_observed.png",dpi=500)
 
 # Show original and separated signals
 plt.figure()  # Create a new figure
@@ -93,7 +94,7 @@ for i in range(3):
     axs[i, 1].legend()
     axs[i, 1].set_xlabel('Time (s)')
 
-plt.savefig("final_order_diagram.png")
+plt.savefig("final_order_diagram.png",dpi=500)
 
 
 # plt.show()
@@ -109,7 +110,8 @@ def calculate_evaluation_metrics(orig, est):
 # Compute the metrics for the corresponding pairs of source and separated signals
 for i in range(3):
     mse, mi = calculate_evaluation_metrics(S[s_order[i]], Sh[sh_order[i]])
-    print(f'For source signal s{s_order[i]+1} and separated signal sh{sh_order[i]+1}, MSE: {mse:.2f}, MI: {mi:.2f}')
+    sdr, sir, sar, _ = bss_eval_sources(S[s_order[i]], Sh[sh_order[i]])
+    print(f'For source signal s{s_order[i]+1} and separated signal sh{sh_order[i]+1}, MSE: {mse:.2f}, MI: {mi:.2f}, SDR: {sdr[0]:.2f}, SIR: {sir[0]:.2f}, SAR: {sar[0]:.2f}')
 
 # Save the separated signals to wav files
 Sh_rescaled = np.int16(Sh/np.max(np.abs(Sh)) * 32767)  # rescale the separated signals
