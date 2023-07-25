@@ -5,6 +5,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mutual_info_score
 import seaborn as sns
 from mir_eval.separation import bss_eval_sources
+from scipy.stats import spearmanr
 
 # load the observed signals
 fs, x1 = wav.read('./report2_wav/x1.wav')
@@ -18,7 +19,7 @@ _, s2 = wav.read('./report2_wav/s2.wav')
 _, s3 = wav.read('./report2_wav/s3.wav')
 S = np.array([s1, s2, s3])
 
-# normalize the input signals
+# normalize the observed signals
 X = (X - np.mean(X, axis=1, keepdims=True)) / np.sqrt(np.nanvar(X, axis=1, keepdims=True))
 
 # normalize the source signals
@@ -35,68 +36,67 @@ Xh = np.dot(V, X)  # whitened signals
 # Implement ICA
 def ICA(Xh, max_iter=1000, tol=1e-6):
     m = Xh.shape[0]  # number of sources
+    Sh = np.zeros_like(Xh)  # initialize separated signals
     W = np.eye(m)  # initialize unmixing matrix
-    for _ in range(max_iter):
-        W_new = W.copy()
-        for i in range(m):
-            w = W[i, :]
-            sh = np.dot(w.T, Xh)
-            w_new = np.mean(np.dot(sh**3, Xh.T)) - 3 * w
-            # make w_new orthogonal to the other rows in W
+    W_past = np.eye(m)  # past unmixing matrix
+
+    for i in range(m):
+        for _ in range(max_iter):
+            W_past[i, :] = W[i, :]
+            sh = np.dot(W[i, :].T, Xh)
+            w_new = np.mean(np.dot(sh**3, Xh.T)) - 3 * W[i, :]
             if i > 0:
                 w_new -= np.dot(np.dot(w_new, W[:i].T), W[:i])
             w_new /= np.sqrt(np.dot(w_new, w_new.T))
-            W_new[i, :] = w_new
-        if np.max(np.abs(W - W_new)) < tol:
-            break
-        W = W_new
-    return W
+            W[i, :] = w_new
+            Sh[i, :] = sh  # update separated signal
+            if np.max(np.abs(W[i, :] - W_past[i, :])) < tol:
+                break
+    return Sh
 
-W = ICA(Xh)
-Sh = np.dot(W, Xh)
+# Reorder seperated signals
+def reorder_separated_signals(S, Sh):
+    correlation_matrix = np.abs(spearmanr(S.T, Sh.T)[0])
+    correlation_matrix = correlation_matrix[:S.shape[0], S.shape[0]:]
+    separated_order = np.argmax(correlation_matrix, axis=1)
+    return Sh[separated_order]
 
-# correlation matrix
-# corr_matrix = np.corrcoef(np.vstack((S, Sh)))
+# Calculate Seperated signals from observed-whitened signals
+Sh_initial = ICA(Xh)
+Sh = reorder_separated_signals(S, Sh_initial)
+
+# correlation matrix between source signals and seperated signals
 plt.figure()  # Create a new figure
 corr_matrix = np.abs(np.corrcoef(np.vstack((S, Sh))))  # take absolute value of correlations
-
-labels = ['s1', 's2', 's3', 'sh1', 'sh2', 'sh3']
-sns.heatmap(corr_matrix, annot=True, fmt=".2f", xticklabels=labels, yticklabels=labels)
-
-# sns.heatmap(corr_matrix, annot=True, fmt=".2f")
-
+labels_sources = ['s1', 's2', 's3']
+labels_seperated = ['sh1', 'sh2', 'sh3']
+sns.heatmap(corr_matrix, annot=True, fmt=".2f", xticklabels=labels_sources+labels_seperated, yticklabels=labels_sources+labels_seperated)
 plt.savefig("final_abs_corr_matrix.png",dpi=500)
 # plt.show()
 
 # Correlation matrix between source signals and observed signals
 plt.figure()  # Create a new figure
 corr_matrix_sources_observed = np.abs(np.corrcoef(np.vstack((S, X))))
-
-labels_sources = ['s1', 's2', 's3']
 labels_observed = ['x1', 'x2', 'x3']
 sns.heatmap(corr_matrix_sources_observed, annot=True, fmt=".2f", xticklabels=labels_sources+labels_observed, yticklabels=labels_sources+labels_observed)
 plt.savefig("abs_corr_matrix_sources_observed.png",dpi=500)
+# plt.show()
 
-# Show original and separated signals
+# Show original and separated signals spectrum
 plt.figure()  # Create a new figure
 time = np.arange(S.shape[1]) / fs
-fig, axs = plt.subplots(3, 2, figsize=(10, 20))
-
-# Match each sh to its corresponding s
-s_order = [0, 1, 2]  # order for s: s3, s2, s1
-sh_order = [2, 1, 0]  # order for sh: sh1, sh2, sh3
+fig, axs = plt.subplots(2, 3, figsize=(20, 10))
 
 for i in range(3):
-    axs[i, 0].plot(time, S[s_order[i]], label='s'+str(s_order[i]+1))
-    axs[i, 0].legend()
-    axs[i, 0].set_xlabel('Time (s)')
-    axs[i, 1].plot(time, Sh[sh_order[i]], label='sh'+str(sh_order[i]+1))
-    axs[i, 1].legend()
-    axs[i, 1].set_xlabel('Time (s)')
+    axs[0, i].plot(time, S[i], label='s'+str(i+1))  # First row for original signals
+    axs[0, i].legend()
+    axs[0, i].set_xlabel('Time (s)')
+    axs[1, i].plot(time, Sh[i], label='sh'+str(i+1))  # Second row for separated signals
+    axs[1, i].legend()
+    axs[1, i].set_xlabel('Time (s)')
 
+plt.tight_layout()
 plt.savefig("final_order_diagram.png",dpi=500)
-
-
 # plt.show()
 
 # calculate evaluation metrics
@@ -105,13 +105,14 @@ def calculate_evaluation_metrics(orig, est):
     mse = mean_squared_error(orig, est)
     # mutual information
     mi = mutual_info_score(orig.astype(int), est.astype(int))
-    return mse, mi
+    #other metrics
+    sdr, sir, sar, _ = bss_eval_sources(orig, est)
+    return mse, mi, sdr, sir, sar
 
 # Compute the metrics for the corresponding pairs of source and separated signals
 for i in range(3):
-    mse, mi = calculate_evaluation_metrics(S[s_order[i]], Sh[sh_order[i]])
-    sdr, sir, sar, _ = bss_eval_sources(S[s_order[i]], Sh[sh_order[i]])
-    print(f'For source signal s{s_order[i]+1} and separated signal sh{sh_order[i]+1}, MSE: {mse:.2f}, MI: {mi:.2f}, SDR: {sdr[0]:.2f}, SIR: {sir[0]:.2f}, SAR: {sar[0]:.2f}')
+    mse, mi, sdr, sir, sar = calculate_evaluation_metrics(S[i], Sh[i])
+    print(f'For source signal s{i+1} and separated signal sh{i+1}, MSE: {mse:.2f}, MI: {mi:.2f}, SDR: {sdr[0]:.2f}, SIR: {sir[0]:.2f}, SAR: {sar[0]:.2f}')
 
 # Save the separated signals to wav files
 Sh_rescaled = np.int16(Sh/np.max(np.abs(Sh)) * 32767)  # rescale the separated signals
