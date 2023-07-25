@@ -2,7 +2,6 @@ import numpy as np
 import scipy.io.wavfile as wav
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
-from sklearn.metrics import mutual_info_score
 import seaborn as sns
 from mir_eval.separation import bss_eval_sources
 from scipy.stats import spearmanr
